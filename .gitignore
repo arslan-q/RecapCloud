@@ -1,0 +1,21 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+override.tf
+override.tf.json
+
+# Python & Environment
+__pycache__/
+*.py[cod]
+.env
+venv/
+.venv/
+
+# Secret Keys & Credentials
+*.pem
+*.json
+key.json
+aws_credentials
+.env
