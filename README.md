@@ -1,1 +1,1 @@
-# RecapCloud
+# RecapCloud — Cloud-Native Media Intelligence
