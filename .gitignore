@@ -15,13 +15,15 @@ venv/
 
 # Secret Keys & Credentials
 *.pem
-*.json
 key.json
+*key*.json
+*credentials*.json
 aws_credentials
 .env
 
 # dependencies
-/node_modules
+node_modules/
+**/node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -34,17 +36,19 @@ aws_credentials
 /coverage
 
 # next.js
-/.next/
+.next/
+**/.next/
 /out/
+**/out/
 
 # production
 /build
 
 # misc
 .DS_Store
-*.pem
 
 # debug
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -58,9 +62,3 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
-# Игнорирование служебных папок фронтенда
-**/node_modules/
-**/.next/
-**/out/
-*.log
