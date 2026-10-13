@@ -3,8 +3,12 @@
 *.tfstate
 *.tfstate.backup
 *.tfvars
+*.tfvars.json
 override.tf
 override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform.lock.hcl
 
 # Python & Environment
 __pycache__/
@@ -62,3 +66,8 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# --- OS / IDE ---
+.vscode/
+.idea/
+.DS_Store
