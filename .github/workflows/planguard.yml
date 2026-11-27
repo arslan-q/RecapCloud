@@ -1,0 +1,93 @@
+# PlanGuard: risk review of Terraform changes in every pull request.
+# Added automatically by the PlanGuard GitHub App. Safe to edit.
+#
+# Out of the box `terraform plan` runs with MOCK AWS credentials and local state,
+# so nothing in your cloud is read or changed and no secrets are needed.
+# To plan against real AWS: configure credentials before the plan step
+# (e.g. aws-actions/configure-aws-credentials with OIDC) and set the
+# repository variable PLANGUARD_MOCK_AWS = false.
+name: PlanGuard
+
+on:
+  pull_request:
+    paths:
+      - "**/*.tf"
+      - "**/*.tfvars"
+      - ".github/workflows/planguard.yml"
+
+permissions:
+  contents: read
+  id-token: write # short-lived OIDC token proves to PlanGuard which repository is calling
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: ["terraform"]
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    env:
+      PLANGUARD_API: https://gxvzp8qwk7.execute-api.eu-north-1.amazonaws.com
+      TF_INPUT: "0"
+      AWS_REGION: us-east-1 # used only when the project does not set a region itself
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Mock AWS for plan-only runs
+        if: vars.PLANGUARD_MOCK_AWS != 'false'
+        run: |
+          mock='provider "aws" {
+            access_key                  = "mock-access-key"
+            secret_key                  = "mock-secret-key"
+            skip_credentials_validation = true
+            skip_requesting_account_id  = true
+            skip_metadata_api_check     = true
+          }'
+          if grep -qs 'provider "aws"' *.tf; then
+            printf '%s\n' "$mock" > zz_planguard_override.tf
+          else
+            printf '%s\n' "$mock" > zz_planguard_mock.tf
+          fi
+          if grep -qs 'backend "' *.tf; then
+            printf 'terraform {\n  backend "local" {}\n}\n' >> zz_planguard_override.tf
+          fi
+
+      - name: terraform plan
+        run: |
+          terraform init -input=false
+          terraform plan -input=false -refresh=false -lock=false -out=tfplan
+          terraform show -json tfplan > plan.json
+
+      - name: PlanGuard
+        env:
+          SHA: ${{ github.event.pull_request.head.sha }}
+          WORKDIR: ${{ matrix.dir }}
+        run: |
+          set -euo pipefail
+          oidc="$(curl -sS --fail -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=planguard" | jq -r .value)"
+          echo "::add-mask::$oidc"
+          jq -c -n --arg sha "$SHA" --arg workdir "$WORKDIR" --slurpfile plan plan.json \
+            '{sha: $sha, workdir: $workdir, plan: $plan[0]}' > body.json
+          code="$(curl -sS -o resp.json -w '%{http_code}' --max-time 60 -X POST "$PLANGUARD_API/analyze" \
+            -H 'Content-Type: application/json' -H "Authorization: Bearer $oidc" --data-binary @body.json)"
+          if [ "$code" != "200" ]; then
+            echo "::error::PlanGuard API returned HTTP $code: $(cat resp.json)"
+            exit 1
+          fi
+          {
+            echo "### 🛡️ PlanGuard ($WORKDIR): $(jq -r .headline resp.json)"
+            echo "- Вердикт: **$(jq -r .verdict resp.json)**, находок: $(jq -r .findings resp.json)"
+            echo "- [Открыть в дашборде]($(jq -r .url resp.json))"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$(jq -r .verdict resp.json)" = "block" ]; then
+            echo "::error::PlanGuard blocked this change: $(jq -r .url resp.json)"
+            exit 1
+          fi
